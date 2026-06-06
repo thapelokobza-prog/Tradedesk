@@ -390,9 +390,9 @@
 <header>
   <div class="logo">Trade<span>Desk</span></div>
   <div class="header-right">
-    <div class="status-pill live" id="statusPill">
+    <div class="status-pill paused" id="statusPill">
       <div class="dot"></div>
-      <span id="statusText">Running</span>
+      <span id="statusText">Not Connected</span>
     </div>
     <button class="btn" onclick="togglePause()">Pause Bot</button>
     <button class="btn danger" onclick="closeAll()">Close All Trades</button>
@@ -406,28 +406,28 @@
   <div class="stat-bar">
     <div class="stat-item">
       <div class="stat-label">Account Balance</div>
-      <div class="stat-value green" id="statBalance">$10,000</div>
-      <div class="stat-change" id="statBalanceChg">your starting capital</div>
+      <div class="stat-value green" id="statBalance">—</div>
+      <div class="stat-change" id="statBalanceChg">awaiting MT5 connection</div>
     </div>
     <div class="stat-item">
       <div class="stat-label">Current Equity</div>
-      <div class="stat-value blue" id="statEquity">$10,000</div>
+      <div class="stat-value blue" id="statEquity">—</div>
       <div class="stat-change" id="statEquityChg">including open trades</div>
     </div>
     <div class="stat-item">
       <div class="stat-label">Floating P&L</div>
-      <div class="stat-value" id="statPnL">$0.00</div>
+      <div class="stat-value" id="statPnL">—</div>
       <div class="stat-change">unrealised gain/loss</div>
     </div>
     <div class="stat-item">
       <div class="stat-label">Open Trades</div>
-      <div class="stat-value" id="statTrades">0</div>
+      <div class="stat-value" id="statTrades">—</div>
       <div class="stat-change" id="statMaxTrades">up to 3 allowed</div>
     </div>
     <div class="stat-item">
       <div class="stat-label">Today's P&L</div>
-      <div class="stat-value" id="statDailyPnl">$0.00</div>
-      <div class="stat-change" id="statDailyPct">0.00% of balance</div>
+      <div class="stat-value" id="statDailyPnl">—</div>
+      <div class="stat-change" id="statDailyPct">awaiting data</div>
     </div>
     <div class="stat-item">
       <div class="stat-label">Win Rate</div>
@@ -520,6 +520,10 @@
       <canvas id="equityChart"></canvas>
     </div>
 
+    <div id="marketBanner" style="display:none; background:rgba(255,184,0,0.08); border:1px solid var(--warn); border-radius:6px; margin:12px 18px 0; padding:10px 16px; font-size:12px; color:var(--warn);">
+      ⚠️ The market is currently closed (weekend). Trading will resume Monday. You can still view your account but cannot place trades.
+    </div>
+
     <div class="trades-section">
       <div class="trades-header">
         <div class="trades-title">Your Open Trades</div>
@@ -560,15 +564,11 @@
       <div class="section-title">Place a Trade</div>
       <div class="trade-form" style="padding:0;">
         <div class="form-row">
-<<<<<<< HEAD
           <select id="manualPair" style="width:100%;">
             <option value="XAUUSD">XAUUSD — Gold</option>
             <option value="GBPUSD">GBPUSD — Cable</option>
             <option value="US30">US30 — Dow Jones</option>
           </select>
-=======
-          <input type="text" id="manualPair" placeholder="EURUSD" value="EURUSD">
->>>>>>> 4ec2f22d1f5d254481c24686d64cba8b9e431eb3
         </div>
         <div class="form-row">
           <input type="number" id="manualLot" placeholder="Lot" value="0.01" step="0.01">
@@ -619,11 +619,104 @@
 <div class="toast" id="toast"></div>
 
 <script>
+// Supabase connection
+const SUPABASE_URL = 'https://rbifprbzbprqppbrbwjg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJiaWZwcmJ6YnBycXBwYnJid2pnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY1MDg1NDMsImV4cCI6MjA5MjA4NDU0M30.cDiuLdyuGQLPRwjQsD2UzlLrnd4vG_h15ZV2bWYXLgk';
+
+// Check if forex market is open
+// Forex is open Mon 00:00 UTC to Fri 22:00 UTC
+function isMarketOpen() {
+  const now = new Date();
+  const day = now.getUTCDay(); // 0=Sun, 1=Mon ... 6=Sat
+  const hour = now.getUTCHours();
+  if (day === 6) return false; // Saturday always closed
+  if (day === 0) return false; // Sunday always closed
+  if (day === 5 && hour >= 22) return false; // Friday after 22:00 UTC closed
+  return true;
+}
+
+function updateMarketStatus() {
+  const open = isMarketOpen();
+  const buyBtn  = document.querySelector('.btn-buy');
+  const sellBtn = document.querySelector('.btn-sell');
+  const marketBanner = document.getElementById('marketBanner');
+
+  if (!open) {
+    if (buyBtn)  { buyBtn.disabled  = true; buyBtn.style.opacity  = '0.4'; buyBtn.title  = 'Market is closed'; }
+    if (sellBtn) { sellBtn.disabled = true; sellBtn.style.opacity = '0.4'; sellBtn.title = 'Market is closed'; }
+    if (marketBanner) marketBanner.style.display = 'block';
+  } else {
+    if (buyBtn)  { buyBtn.disabled  = false; buyBtn.style.opacity  = '1'; buyBtn.title  = ''; }
+    if (sellBtn) { sellBtn.disabled = false; sellBtn.style.opacity = '1'; sellBtn.title = ''; }
+    if (marketBanner) marketBanner.style.display = 'none';
+  }
+}
+
+async function fetchAccountData() {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/account_data?id=eq.1`, {
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Authorization': 'Bearer ' + SUPABASE_KEY
+      }
+    });
+    const data = await res.json();
+    if (data && data[0]) {
+      const d = data[0];
+      const lastUpdated = new Date(d.updated_at);
+      const secondsAgo = Math.floor((Date.now() - lastUpdated) / 1000);
+      const isLive = secondsAgo < 30;
+
+      // Update stat bar with real data
+      document.getElementById('statBalance').textContent = '$' + parseFloat(d.balance).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      document.getElementById('statEquity').textContent  = '$' + parseFloat(d.equity).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+      const pnl = parseFloat(d.open_pnl);
+      const pnlEl = document.getElementById('statPnL');
+      pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+      pnlEl.className = 'stat-value ' + (pnl >= 0 ? 'green' : 'red');
+
+      const dpnl = parseFloat(d.daily_pnl);
+      const dpEl = document.getElementById('statDailyPnl');
+      dpEl.textContent = (dpnl >= 0 ? '+' : '') + '$' + dpnl.toFixed(2);
+      dpEl.className = 'stat-value ' + (dpnl >= 0 ? 'green' : 'red');
+      const bal = parseFloat(d.balance) || 1;
+      document.getElementById('statDailyPct').textContent = (dpnl / bal * 100).toFixed(2) + '% of balance';
+
+      document.getElementById('statTrades').textContent = d.open_trades;
+
+      const total = d.wins + d.losses;
+      const wr = total > 0 ? (d.wins / total * 100).toFixed(0) + '%' : '—';
+      document.getElementById('statWinRate').textContent = wr;
+      document.getElementById('statWinDetail').textContent = total > 0 ? `${d.wins}W / ${d.losses}L` : 'no closed trades yet';
+
+      // Connection status
+      const pill = document.getElementById('statusPill');
+      const txt  = document.getElementById('statusText');
+      if (isLive) {
+        pill.className = 'status-pill live';
+        txt.textContent = 'Live · MT5 Connected';
+        document.getElementById('statBalanceChg').textContent = `updated ${secondsAgo}s ago`;
+      } else {
+        pill.className = 'status-pill paused';
+        txt.textContent = 'MT5 Offline';
+        document.getElementById('statBalanceChg').textContent = `last seen ${Math.floor(secondsAgo/60)}m ago`;
+      }
+    }
+  } catch(e) {
+    console.log('Supabase fetch error:', e);
+  }
+}
+
+// Poll Supabase every 5 seconds
+fetchAccountData();
+setInterval(fetchAccountData, 5000);
+
 const state = {
   connected: false,
   paused: false,
-  balance: 10000,
-  equity: 10000,
+  balance: 0,
+  equity: 0,
   trades: [],
   equityHistory: [],
   wins: 0,
@@ -634,21 +727,28 @@ const state = {
 // Init log time
 document.getElementById('logTime1').textContent = new Date().toTimeString().slice(0,8);
 
-// Demo equity curve data
-const demoEquity = [10000,10080,10065,10140,10190,10155,10230,10310,10280,10350,10420,10390,10460,10440,10520];
-
 function drawChart() {
   const canvas = document.getElementById('equityChart');
   const ctx = canvas.getContext('2d');
   canvas.width = canvas.offsetWidth;
   canvas.height = canvas.offsetHeight;
   const w = canvas.width, h = canvas.height;
-  const data = state.equityHistory.length > 1 ? state.equityHistory : demoEquity;
+  ctx.clearRect(0,0,w,h);
+
+  if (state.equityHistory.length < 2) {
+    // No data — show placeholder message
+    ctx.fillStyle = '#5a6478';
+    ctx.font = `13px 'Space Mono', monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText('Equity curve will appear once MT5 is connected', w/2, h/2);
+    ctx.textAlign = 'left';
+    return;
+  }
+
+  const data = state.equityHistory;
   const min = Math.min(...data) * 0.999;
   const max = Math.max(...data) * 1.001;
   const pad = { t:30, b:20, l:10, r:10 };
-
-  ctx.clearRect(0,0,w,h);
 
   const pts = data.map((v,i) => ({
     x: pad.l + (i / (data.length-1)) * (w - pad.l - pad.r),
@@ -718,33 +818,8 @@ function togglePause() {
 }
 
 function connectMT5() {
-  const btn = document.getElementById('connectBtn');
-  btn.textContent = 'Connecting...';
-  addLog('Connecting to MT5 — make sure the EA is running on your terminal.', 'info');
-  setTimeout(() => {
-    state.connected = true;
-    btn.textContent = 'Connected ✓';
-    btn.style.background = 'rgba(0,229,160,0.15)';
-    btn.style.borderColor = 'var(--accent)';
-    btn.style.color = 'var(--accent)';
-    document.getElementById('chartPairLabel').textContent = 'EURUSD  H1';
-    state.equityHistory = demoEquity;
-    drawChart();
-    loadDemoTrades();
-    addLog('Connected! Your account has been loaded and strategies are active.', 'info');
-    showToast('MT5 connected successfully', 'green');
-    updateStats();
-  }, 1800);
-}
-
-function loadDemoTrades() {
-  state.trades = [
-    { id:1, pair:'EURUSD', type:'BUY',  lot:0.02, open:1.08452, current:1.08610, sl:1.08200, tp:1.09050, pnl:31.60, strategy:'Breakout' },
-    { id:2, pair:'USDJPY', type:'SELL', lot:0.01, open:149.820, current:149.650, sl:150.100, tp:149.200, pnl:12.30, strategy:'SMC' },
-    { id:3, pair:'GBPUSD', type:'BUY',  lot:0.01, open:1.27340, current:1.27190, sl:1.27000, tp:1.27900, pnl:-15.0, strategy:'Patterns' },
-  ];
-  renderTrades();
-  updateStats();
+  addLog('Make sure the TradingSystem EA is running on your MT5 chart. Data will appear automatically.', 'info');
+  showToast('Waiting for MT5 EA to push data...', '');
 }
 
 function renderTrades() {
@@ -890,20 +965,9 @@ function showToast(msg, color) {
 // Init
 loadSettings();
 drawChart();
+updateMarketStatus();
 window.addEventListener('resize', drawChart);
-
-// Simulate live tick updates
-setInterval(() => {
-  if(!state.connected || state.paused) return;
-  state.trades.forEach(t => {
-    const drift = (Math.random()-0.48) * 0.001;
-    t.current = parseFloat((t.current + drift).toFixed(5));
-    if(t.type==='BUY')  t.pnl = parseFloat(((t.current - t.open) * t.lot * 100000 * 1).toFixed(2));
-    else                t.pnl = parseFloat(((t.open - t.current) * t.lot * 100000 * 1).toFixed(2));
-  });
-  renderTrades();
-  updateStats();
-}, 2000);
+setInterval(updateMarketStatus, 60000); // recheck market status every minute
 </script>
 </body>
 </html>
