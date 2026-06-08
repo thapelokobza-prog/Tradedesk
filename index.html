@@ -652,6 +652,39 @@ function updateMarketStatus() {
   }
 }
 
+// Fetch and render open trades from Supabase
+async function fetchOpenTrades() {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/open_trades?select=*&order=open_time.desc`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': 'Bearer ' + SUPABASE_KEY }
+    });
+    const trades = await res.json();
+    const tbody = document.getElementById('tradesTable');
+    if (!trades || trades.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted);font-size:12px;">No open trades right now — the bot is watching the market.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = trades.map(t => {
+      const pnl = parseFloat(t.pnl) || 0;
+      const pnlClass = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+      const pnlStr = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+      const typeClass = t.type === 'BUY' ? 'type-buy' : 'type-sell';
+      return `<tr>
+        <td class="pair-cell">${t.pair}</td>
+        <td class="${typeClass}">${t.type}</td>
+        <td>${parseFloat(t.lot).toFixed(2)}</td>
+        <td>${parseFloat(t.open_price).toFixed(5)}</td>
+        <td>${parseFloat(t.current_price).toFixed(5)}</td>
+        <td style="color:var(--danger)">${parseFloat(t.sl).toFixed(5)}</td>
+        <td style="color:var(--accent)">${parseFloat(t.tp).toFixed(5)}</td>
+        <td class="${pnlClass}">${pnlStr}</td>
+        <td><span class="strategy-badge">${t.strategy||'Auto'}</span></td>
+        <td><button class="close-btn" onclick="showToast('Close this trade in MT5','')">CLOSE</button></td>
+      </tr>`;
+    }).join('');
+  } catch(e) { console.log('Trades fetch error:', e); }
+}
+
 async function fetchAccountData() {
   try {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/account_data?id=eq.1`, {
@@ -665,42 +698,60 @@ async function fetchAccountData() {
       const d = data[0];
       const lastUpdated = new Date(d.updated_at);
       const secondsAgo = Math.floor((Date.now() - lastUpdated) / 1000);
-      const isLive = secondsAgo < 30;
+      const isLive     = secondsAgo < 30;       // live = updated in last 30s
+      const isRecent   = secondsAgo < 300;      // recent = updated in last 5 mins
+      const hasData    = parseFloat(d.balance) > 0;
 
-      // Update stat bar with real data
-      document.getElementById('statBalance').textContent = '$' + parseFloat(d.balance).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
-      document.getElementById('statEquity').textContent  = '$' + parseFloat(d.equity).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+      // Always show balance data if we have it
+      if (hasData) {
+        document.getElementById('statBalance').textContent = '$' + parseFloat(d.balance).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+        document.getElementById('statEquity').textContent  = '$' + parseFloat(d.equity).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 
-      const pnl = parseFloat(d.open_pnl);
-      const pnlEl = document.getElementById('statPnL');
-      pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
-      pnlEl.className = 'stat-value ' + (pnl >= 0 ? 'green' : 'red');
+        const pnl = parseFloat(d.open_pnl);
+        const pnlEl = document.getElementById('statPnL');
+        pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
+        pnlEl.className = 'stat-value ' + (pnl >= 0 ? 'green' : 'red');
 
-      const dpnl = parseFloat(d.daily_pnl);
-      const dpEl = document.getElementById('statDailyPnl');
-      dpEl.textContent = (dpnl >= 0 ? '+' : '') + '$' + dpnl.toFixed(2);
-      dpEl.className = 'stat-value ' + (dpnl >= 0 ? 'green' : 'red');
-      const bal = parseFloat(d.balance) || 1;
-      document.getElementById('statDailyPct').textContent = (dpnl / bal * 100).toFixed(2) + '% of balance';
+        const dpnl = parseFloat(d.daily_pnl);
+        const dpEl = document.getElementById('statDailyPnl');
+        dpEl.textContent = (dpnl >= 0 ? '+' : '') + '$' + dpnl.toFixed(2);
+        dpEl.className = 'stat-value ' + (dpnl >= 0 ? 'green' : 'red');
+        const bal = parseFloat(d.balance) || 1;
+        document.getElementById('statDailyPct').textContent = (dpnl / bal * 100).toFixed(2) + '% of balance';
+        document.getElementById('statTrades').textContent = d.open_trades;
 
-      document.getElementById('statTrades').textContent = d.open_trades;
+        const total = d.wins + d.losses;
+        const wr = total > 0 ? (d.wins / total * 100).toFixed(0) + '%' : '—';
+        document.getElementById('statWinRate').textContent = wr;
+        document.getElementById('statWinDetail').textContent = total > 0 ? `${d.wins}W / ${d.losses}L` : 'no closed trades yet';
+      }
 
-      const total = d.wins + d.losses;
-      const wr = total > 0 ? (d.wins / total * 100).toFixed(0) + '%' : '—';
-      document.getElementById('statWinRate').textContent = wr;
-      document.getElementById('statWinDetail').textContent = total > 0 ? `${d.wins}W / ${d.losses}L` : 'no closed trades yet';
-
-      // Connection status
+      // Connection status pill
       const pill = document.getElementById('statusPill');
       const txt  = document.getElementById('statusText');
+      const btn  = document.getElementById('connectBtn');
+
       if (isLive) {
         pill.className = 'status-pill live';
         txt.textContent = 'Live · MT5 Connected';
+        btn.textContent = 'Connected ✓';
+        btn.style.background = 'rgba(0,229,160,0.15)';
+        btn.style.borderColor = 'var(--accent)';
+        btn.style.color = 'var(--accent)';
         document.getElementById('statBalanceChg').textContent = `updated ${secondsAgo}s ago`;
+      } else if (isRecent && hasData) {
+        pill.className = 'status-pill paused';
+        txt.textContent = 'MT5 Idle';
+        btn.textContent = 'MT5 Idle';
+        document.getElementById('statBalanceChg').textContent = `last seen ${Math.floor(secondsAgo/60)}m ago`;
       } else {
         pill.className = 'status-pill paused';
         txt.textContent = 'MT5 Offline';
-        document.getElementById('statBalanceChg').textContent = `last seen ${Math.floor(secondsAgo/60)}m ago`;
+        btn.textContent = 'Connect to MT5';
+        btn.style.background = '';
+        btn.style.borderColor = '';
+        btn.style.color = '';
+        document.getElementById('statBalanceChg').textContent = hasData ? `last seen ${Math.floor(secondsAgo/60)}m ago` : 'awaiting MT5 connection';
       }
     }
   } catch(e) {
@@ -710,7 +761,9 @@ async function fetchAccountData() {
 
 // Poll Supabase every 5 seconds
 fetchAccountData();
+fetchOpenTrades();
 setInterval(fetchAccountData, 5000);
+setInterval(fetchOpenTrades, 5000);
 
 const state = {
   connected: false,
