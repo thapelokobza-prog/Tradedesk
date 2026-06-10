@@ -696,10 +696,10 @@ async function fetchAccountData() {
     const data = await res.json();
     if (data && data[0]) {
       const d = data[0];
-      const lastUpdated = new Date(d.updated_at);
+      const lastUpdated = new Date(d.updated_at + 'Z'); // force UTC parse
       const secondsAgo = Math.floor((Date.now() - lastUpdated) / 1000);
-      const isLive     = secondsAgo < 30;       // live = updated in last 30s
-      const isRecent   = secondsAgo < 300;      // recent = updated in last 5 mins
+      const isLive     = secondsAgo < 30;
+      const isRecent   = secondsAgo < 300;
       const hasData    = parseFloat(d.balance) > 0;
 
       // Always show balance data if we have it
