@@ -696,10 +696,12 @@ async function fetchAccountData() {
     const data = await res.json();
     if (data && data[0]) {
       const d = data[0];
-      const lastUpdated = new Date(d.updated_at + 'Z'); // force UTC parse
-      const secondsAgo = Math.floor((Date.now() - lastUpdated) / 1000);
-      const isLive     = secondsAgo < 30;
-      const isRecent   = secondsAgo < 300;
+      // Parse Supabase timestamp correctly (it's UTC)
+      const rawDate    = d.updated_at.endsWith('Z') ? d.updated_at : d.updated_at.replace(' ', 'T') + 'Z';
+      const lastUpdated = new Date(rawDate);
+      const secondsAgo = Math.floor((Date.now() - lastUpdated.getTime()) / 1000);
+      const isLive     = secondsAgo >= 0 && secondsAgo < 30;
+      const isRecent   = secondsAgo >= 0 && secondsAgo < 300;
       const hasData    = parseFloat(d.balance) > 0;
 
       // Always show balance data if we have it
