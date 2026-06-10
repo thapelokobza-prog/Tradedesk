@@ -733,7 +733,7 @@ async function fetchAccountData() {
       const txt  = document.getElementById('statusText');
       const btn  = document.getElementById('connectBtn');
 
-      if (isLive) {
+      if (isLive && hasData) {
         pill.className = 'status-pill live';
         txt.textContent = 'Live · MT5 Connected';
         btn.textContent = 'Connected ✓';
@@ -741,19 +741,24 @@ async function fetchAccountData() {
         btn.style.borderColor = 'var(--accent)';
         btn.style.color = 'var(--accent)';
         document.getElementById('statBalanceChg').textContent = `updated ${secondsAgo}s ago`;
-      } else if (isRecent && hasData) {
-        pill.className = 'status-pill paused';
-        txt.textContent = 'MT5 Idle';
-        btn.textContent = 'MT5 Idle';
-        document.getElementById('statBalanceChg').textContent = `last seen ${Math.floor(secondsAgo/60)}m ago`;
+      } else if (hasData) {
+        // Has real data — show as connected even if slightly stale
+        pill.className = 'status-pill live';
+        txt.textContent = 'MT5 Connected';
+        btn.textContent = 'Connected ✓';
+        btn.style.background = 'rgba(0,229,160,0.15)';
+        btn.style.borderColor = 'var(--accent)';
+        btn.style.color = 'var(--accent)';
+        const mins = Math.floor(secondsAgo / 60);
+        document.getElementById('statBalanceChg').textContent = mins < 2 ? `updated ${secondsAgo}s ago` : `last seen ${mins}m ago`;
       } else {
         pill.className = 'status-pill paused';
-        txt.textContent = 'MT5 Offline';
+        txt.textContent = 'Not Connected';
         btn.textContent = 'Connect to MT5';
         btn.style.background = '';
         btn.style.borderColor = '';
         btn.style.color = '';
-        document.getElementById('statBalanceChg').textContent = hasData ? `last seen ${Math.floor(secondsAgo/60)}m ago` : 'awaiting MT5 connection';
+        document.getElementById('statBalanceChg').textContent = 'awaiting MT5 connection';
       }
     }
   } catch(e) {
