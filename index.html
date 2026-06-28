@@ -700,11 +700,11 @@ async function fetchAccountData() {
       const rawDate     = d.updated_at.replace(' ', 'T').replace('+00', '+00:00');
       const lastUpdated = new Date(rawDate);
       const secondsAgo  = isNaN(lastUpdated) ? 9999 : Math.floor((Date.now() - lastUpdated.getTime()) / 1000);
-      const isLive      = secondsAgo < 30;
-      const isRecent    = secondsAgo < 300;
+      const isLive      = secondsAgo < 30;   // pushed in last 30s → fully live
+      const isRecent    = secondsAgo < 120;  // pushed in last 2 min → still connected
       const hasData     = parseFloat(d.balance) > 0;
 
-      // Always show balance data if we have it
+      // Always show balance data if we have it (even when offline — shows last known)
       if (hasData) {
         document.getElementById('statBalance').textContent = '$' + parseFloat(d.balance).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
         document.getElementById('statEquity').textContent  = '$' + parseFloat(d.equity).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -734,6 +734,7 @@ async function fetchAccountData() {
       const btn  = document.getElementById('connectBtn');
 
       if (isLive && hasData) {
+        // EA pushing right now — fully live
         pill.className = 'status-pill live';
         txt.textContent = 'Live · MT5 Connected';
         btn.textContent = 'Connected ✓';
@@ -741,17 +742,27 @@ async function fetchAccountData() {
         btn.style.borderColor = 'var(--accent)';
         btn.style.color = 'var(--accent)';
         document.getElementById('statBalanceChg').textContent = `updated ${secondsAgo}s ago`;
-      } else if (hasData) {
-        // Has real data — show as connected even if slightly stale
+      } else if (isRecent && hasData) {
+        // Data is 30s–2min old — still connected
         pill.className = 'status-pill live';
         txt.textContent = 'MT5 Connected';
         btn.textContent = 'Connected ✓';
         btn.style.background = 'rgba(0,229,160,0.15)';
         btn.style.borderColor = 'var(--accent)';
         btn.style.color = 'var(--accent)';
+        document.getElementById('statBalanceChg').textContent = `updated ${secondsAgo}s ago`;
+      } else if (hasData) {
+        // Data is stale (>2 min) — bot is offline, show last known balance
+        pill.className = 'status-pill paused';
         const mins = Math.floor(secondsAgo / 60);
-        document.getElementById('statBalanceChg').textContent = mins < 2 ? `updated ${secondsAgo}s ago` : `last seen ${mins}m ago`;
+        txt.textContent = 'MT5 Offline';
+        btn.textContent = 'Connect to MT5';
+        btn.style.background = '';
+        btn.style.borderColor = '';
+        btn.style.color = '';
+        document.getElementById('statBalanceChg').textContent = `last seen ${mins}m ago — bot stopped`;
       } else {
+        // No data at all
         pill.className = 'status-pill paused';
         txt.textContent = 'Not Connected';
         btn.textContent = 'Connect to MT5';
